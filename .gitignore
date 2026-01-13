@@ -1,0 +1,34 @@
+# --- Executables ---
+cbar
+*.out
+*.exe
+
+# --- Object Files and Libraries ---
+*.o
+*.obj
+*.a
+*.so
+*.la
+*.lo
+
+# --- Build Directory ---
+build/
+bin/
+dist/
+
+# --- Editor Files ---
+*.swp
+*.swo
+.netrwhist
+undo/
+Session.vim
+
+# Nano
+*.save
+
+# Micro
+*.save
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
