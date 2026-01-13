@@ -1,6 +1,12 @@
 /*
- * Cbar: A lightweight and efficient status bar for i3/sway.
+ * Cbar: A lightweight, dependency-free status bar for i3/sway.
+ * Written in pure C to minimize memory footprint (~1-2MB).
+ *
+ * Author: [Your Name/Handle]
+ * Repository: github.com/[your-username]/cbar
  */
+
+#define _POSIX_C_SOURCE 200809L // Required for popen, strdup, etc.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,265 +14,309 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <ctype.h>
+#include <sys/statvfs.h>
 
-#define BATTERY_NAME "BAT0"
-#define WIFI_INTERFACE "wlan0"
+/* ================================================================== *
+ * CONFIGURATION                               *
+ * Customize these values to match your hardware and preferences.    *
+ * ================================================================== */
 
-// Runs a command and captures the first line of output.
-static void run_cmd(char* out, size_t size, const char* cmd) {
-    FILE* fp = popen(cmd, "r");
-    if (fp && fgets(out, size, fp)) {
+// Network Interfaces (Run 'ip link' to find yours)
+#define WIFI_INTERFACE  "wlan0"
+#define ETH_INTERFACE   "eth0"
+
+// Battery Configuration
+#define BATTERY_PATH    "/sys/class/power_supply/BAT0"
+
+// System Paths (Usually don't need changing on standard Linux)
+#define THERMAL_ZONE    "/sys/class/hwmon"
+#define GPU_INTEL_AMD   "/sys/class/drm/card0/device/gpu_busy_percent"
+
+// Update Intervals
+#define REFRESH_RATE_MS 1000  // Main loop delay (1 second)
+#define SLOW_UPDATE_CYCLE 5   // Update slow modules every 5 cycles (5 seconds)
+
+/* ================================================================== *
+ * HELPER FUNCTIONS                            *
+ * ================================================================== */
+
+// Reads the first line from a file. Returns 1 on success, 0 on failure.
+int read_file(const char* path, char* out, size_t size) {
+    FILE* f = fopen(path, "r");
+    if (!f) return 0;
+    
+    if (fgets(out, size, f)) {
         out[strcspn(out, "\n")] = 0; // Remove trailing newline
-    } else if (out) {
+        fclose(f);
+        return 1;
+    }
+    
+    fclose(f);
+    return 0;
+}
+
+// Executes a shell command and captures the first line of output.
+// Used sparingly to keep memory usage low.
+void run_command(const char* cmd, char* out, size_t size) {
+    FILE* fp = popen(cmd, "r");
+    if (fp) {
+        if (fgets(out, size, fp)) {
+            out[strcspn(out, "\n")] = 0;
+        } else {
+            out[0] = '\0';
+        }
+        pclose(fp);
+    } else {
         out[0] = '\0';
     }
-    if (fp) pclose(fp);
 }
 
-// Reads a long integer from a file.
-static long read_long(const char* path) {
-    FILE* f = fopen(path, "r");
-    if (!f) return -1;
-    long val = -1;
-    fscanf(f, "%ld", &val);
-    fclose(f);
-    return val;
-}
+/* ================================================================== *
+ * MODULES                                   *
+ * ================================================================== */
 
-// Gets root partition usage percentage.
-static void get_disk(char* out, size_t size) {
-    char usage[16];
-    run_cmd(usage, sizeof(usage), "df --output=pcent / | tail -n 1");
-    
-    // Trim leading whitespace from df output.
-    char* p = usage;
-    while (*p && isspace((unsigned char)*p)) {
-        p++;
+// Calculates Root Partition (/) usage using syscalls (efficient).
+void get_disk_usage(char* out, size_t size) {
+    struct statvfs buf;
+    if (statvfs("/", &buf) == 0) {
+        unsigned long total = buf.f_blocks * buf.f_frsize;
+        unsigned long available = buf.f_bavail * buf.f_frsize;
+        int percent = 100 * (total - available) / total;
+        snprintf(out, size, "DISK: %d%%", percent);
+    } else {
+        snprintf(out, size, "DISK: N/A");
     }
-    snprintf(out, size, "DISK: %s", p);
 }
 
-// Calculates disk write speed by reading /proc/diskstats.
-static void get_disk_write(char* out, size_t size) {
+// Reads /proc/diskstats to calculate I/O write speed.
+void get_disk_io(char* out, size_t size) {
     static unsigned long long prev_sectors = 0;
     static time_t prev_time = 0;
     unsigned long long sectors = 0;
+    char line[256], device_name[32];
     
     FILE* f = fopen("/proc/diskstats", "r");
-    if (!f) {
-        snprintf(out, size, "IO: N/A");
-        return;
-    }
+    if (!f) { snprintf(out, size, "IO: N/A"); return; }
 
-    char line[256];
+    // Parse diskstats to find the main drive (nvme or sda)
     while (fgets(line, sizeof(line), f)) {
-        char dev[32];
-        sscanf(line, " %*d %*d %s %*d %*d %*d %*d %*d %*d %llu", dev, &sectors);
-        if (strstr(dev, "nvme") || ( (strstr(dev, "sd") || strstr(dev, "hd") || strstr(dev, "vd")) && isalpha(dev[2]) && dev[3] == '\0') ) {
-            break;
+        if (sscanf(line, " %*d %*d %s %*d %*d %*d %*d %*d %*d %llu", device_name, &sectors) == 2) {
+             // Check for common main drive names
+             if (strstr(device_name, "nvme") || 
+                (device_name[0] == 's' && isalpha(device_name[1]) && !device_name[2])) {
+                 break;
+             }
         }
     }
     fclose(f);
 
     time_t now = time(NULL);
-    double kbs = 0.0;
-
-    if (prev_time > 0 && now > prev_time) {
-        unsigned long long sector_diff = sectors - prev_sectors;
-        time_t time_diff = now - prev_time;
-        kbs = (double)(sector_diff * 512) / 1024.0 / (double)time_diff;
+    if (prev_time && now > prev_time) {
+        double speed_kb = (double)((sectors - prev_sectors) * 512) / 1024.0 / (now - prev_time);
+        snprintf(out, size, "IO: %.1f KB/s", speed_kb);
+    } else {
+        snprintf(out, size, "IO: 0.0 KB/s");
     }
-
-    snprintf(out, size, "IO: %.1f KB/s", kbs);
+    
     prev_sectors = sectors;
     prev_time = now;
 }
 
-// Gets GPU utilization.
-static void get_gpu(char* out, size_t size) {
+// Gets GPU usage. Supports Intel/AMD (sysfs) and NVIDIA (nvidia-smi).
+void get_gpu_usage(char* out, size_t size) {
+    // 1. Try generic sysfs (Intel/AMD) - Extremely fast
+    if (read_file(GPU_INTEL_AMD, out, size)) {
+        char temp[16]; 
+        snprintf(temp, sizeof(temp), "GPU: %s%%", out); 
+        strcpy(out, temp);
+        return;
+    }
+
+    // 2. Fallback to nvidia-smi - Slower but necessary for NVIDIA
     char util[16];
-    run_cmd(util, sizeof(util), "nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits");
+    run_command("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits", util, sizeof(util));
     if (strlen(util) > 0) {
-        char* p = util;
-        while (*p && isspace((unsigned char)*p)) p++; // Trim whitespace
-        snprintf(out, size, "GPU: %s%%", p);
-        return;
+        snprintf(out, size, "GPU: %s%%", util);
+    } else {
+        snprintf(out, size, "GPU: N/A");
     }
-
-    FILE* f = fopen("/sys/class/drm/card0/device/gpu_busy_percent", "r");
-    if (f) {
-        int percent = 0;
-        fscanf(f, "%d", &percent);
-        fclose(f);
-        snprintf(out, size, "GPU: %d%%", percent);
-        return;
-    }
-
-    // If neither is found, report N/A.
-    snprintf(out, size, "GPU: N/A");
 }
 
-// Gets Wi-Fi SSID and IP address.
-static void get_wifi(char* out, size_t size) {
-    char ssid[64], ipv4[64], cmd[128];
-    snprintf(cmd, sizeof(cmd), "iwgetid -r %s", WIFI_INTERFACE);
-    run_cmd(ssid, sizeof(ssid), cmd);
-    if (strlen(ssid) == 0) {
-        snprintf(out, size, "WIFI: Down");
+// Handles both WiFi and Ethernet status.
+// mode: 1 for WiFi (shows SSID), 0 for Ethernet (shows only Status/IP).
+void get_network_status(char* out, size_t size, const char* interface, int is_wifi) {
+    char path[128], operstate[16], ip_address[64] = "";
+    
+    // Check if interface is UP via sysfs (avoids spawning processes if down)
+    snprintf(path, sizeof(path), "/sys/class/net/%s/operstate", interface);
+    
+    if (!read_file(path, operstate, sizeof(operstate)) || strcmp(operstate, "up") != 0) {
+        snprintf(out, size, is_wifi ? "WIFI: Down" : "E: down");
         return;
     }
-    snprintf(cmd, sizeof(cmd), "ip -4 addr show %s | grep -oP 'inet \\K[\\d.]+'", WIFI_INTERFACE);
-    run_cmd(ipv4, sizeof(ipv4), cmd);
-    snprintf(out, size, "WIFI: %s (%s)", ssid, strlen(ipv4) > 0 ? ipv4 : "No IP");
+
+    // Get IP Address
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd), "ip -4 addr show %s | grep -oP 'inet \\K[\\d.]+'", interface);
+    run_command(cmd, ip_address, sizeof(ip_address));
+
+    if (is_wifi) {
+        char ssid[64];
+        snprintf(cmd, sizeof(cmd), "iwgetid -r %s", interface);
+        run_command(cmd, ssid, sizeof(ssid));
+        // Format: WIFI: SSID (IP)
+        snprintf(out, size, "WIFI: %s (%s)", strlen(ssid) ? ssid : "?", strlen(ip_address) ? ip_address : "No IP");
+    } else {
+        // Format: E: IP
+        snprintf(out, size, "E: %s", strlen(ip_address) ? ip_address : "Up");
+    }
 }
 
-// Calculates CPU usage percentage by reading /proc/stat.
-static void get_cpu(char* out, size_t size) {
+// Calculates CPU usage from /proc/stat
+void get_cpu_usage(char* out, size_t size) {
     static unsigned long long prev_total = 0, prev_idle = 0;
-    unsigned long long total, idle, user, nice, system, iowait, irq, softirq, steal;
+    unsigned long long user, nice, sys, idle, iowait, irq, softirq, steal, total;
     
     FILE* f = fopen("/proc/stat", "r");
-    if (!f) { snprintf(out, size, "CPU: N/A"); return; }
-    fscanf(f, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal);
+    if (!f) return;
+    fscanf(f, "cpu %llu %llu %llu %llu %llu %llu %llu %llu", 
+           &user, &nice, &sys, &idle, &iowait, &irq, &softirq, &steal);
     fclose(f);
-
-    total = user + nice + system + idle + iowait + irq + softirq + steal;
-    idle = idle + iowait;
-
-    double percent = 0.0;
+    
+    total = user + nice + sys + idle + iowait + irq + softirq + steal;
+    idle += iowait; // Treat iowait as idle time
+    
+    double usage = 0.0;
     if (prev_total > 0) {
-        unsigned long long total_d = total - prev_total;
-        unsigned long long idle_d = idle - prev_idle;
-        if (total_d > 0) percent = 100.0 * (total_d - idle_d) / total_d;
+        unsigned long long total_diff = total - prev_total;
+        unsigned long long idle_diff = idle - prev_idle;
+        usage = 100.0 * (double)(total_diff - idle_diff) / total_diff;
     }
-    snprintf(out, size, "CPU: %.2f%%", percent);
+    
+    snprintf(out, size, "CPU: %.1f%%", usage);
     prev_total = total;
     prev_idle = idle;
 }
 
-// Gets CPU/system temperature from hwmon.
-static void get_temp(char* out, size_t size) {
-    DIR* hwmon_dir = opendir("/sys/class/hwmon");
-    if (!hwmon_dir) { snprintf(out, size, "TEMP: N/A"); return; }
-    struct dirent* de;
-    while ((de = readdir(hwmon_dir))) {
-        if (strncmp(de->d_name, "hwmon", 5) != 0) continue;
+// Scans hwmon for CPU temperature.
+void get_temperature(char* out, size_t size) {
+    DIR* dir = opendir(THERMAL_ZONE);
+    struct dirent* entry;
+    
+    while (dir && (entry = readdir(dir))) {
+        if (strncmp(entry->d_name, "hwmon", 5) != 0) continue;
         
-        char path[256];
-        snprintf(path, sizeof(path), "/sys/class/hwmon/%s/name", de->d_name);
-        FILE* f_name = fopen(path, "r");
-        if (!f_name) continue;
-
-        char name[32];
-        fscanf(f_name, "%31s", name);
-        fclose(f_name);
-
-        // Check for common CPU temperature sensors.
-        if (strcmp(name, "coretemp") == 0 || strcmp(name, "k10temp") == 0 || strcmp(name, "zenpower") == 0) {
-            snprintf(path, sizeof(path), "/sys/class/hwmon/%s/temp1_input", de->d_name);
-            long temp = read_long(path);
-            if (temp != -1) {
-                snprintf(out, size, "TEMP: %.1fC", (double)temp / 1000.0);
-                closedir(hwmon_dir);
+        char path[256], name[32], temp_str[16];
+        snprintf(path, sizeof(path), "%s/%s/name", THERMAL_ZONE, entry->d_name);
+        
+        // Check for common CPU sensor names
+        if (read_file(path, name, sizeof(name)) && 
+           (strstr(name, "core") || strstr(name, "k10") || strstr(name, "zen"))) {
+            
+            snprintf(path, sizeof(path), "%s/%s/temp1_input", THERMAL_ZONE, entry->d_name);
+            if (read_file(path, temp_str, sizeof(temp_str))) {
+                snprintf(out, size, "TEMP: %.0fC", atoi(temp_str) / 1000.0);
+                closedir(dir); 
                 return;
             }
         }
     }
-    closedir(hwmon_dir);
+    if (dir) closedir(dir);
     snprintf(out, size, "TEMP: N/A");
 }
 
-// Calculates used RAM by reading /proc/meminfo.
-static void get_ram(char* out, size_t size) {
+// Reads MemAvailable from /proc/meminfo.
+void get_ram_usage(char* out, size_t size) {
     FILE* f = fopen("/proc/meminfo", "r");
-    if (!f) { snprintf(out, size, "RAM: N/A"); return; }
-    long total = 0, free = 0, buffers = 0, cached = 0;
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-        sscanf(line, "MemTotal: %ld kB", &total);
-        sscanf(line, "MemFree: %ld kB", &free);
-        sscanf(line, "Buffers: %ld kB", &buffers);
-        sscanf(line, "Cached: %ld kB", &cached);
-        if (total && free && buffers && cached) break; // Stop reading once we have all values
-    }
-    fclose(f);
-    snprintf(out, size, "RAM: %ld MB", (total - free - buffers - cached) / 1024);
-}
-
-// Gets battery status and percentage.
-static void get_battery(char* out, size_t size) {
-    char path[256];
-    snprintf(path, sizeof(path), "/sys/class/power_supply/%s/status", BATTERY_NAME);
-    if (access(path, F_OK) == -1) { snprintf(out, size, "PWR: AC"); return; }
-
-    double capacity = 0.0;
-    snprintf(path, sizeof(path), "/sys/class/power_supply/%s/energy_now", BATTERY_NAME);
-    long now = read_long(path);
-    snprintf(path, sizeof(path), "/sys/class/power_supply/%s/energy_full", BATTERY_NAME);
-    long full = read_long(path);
-
-    if (now != -1 && full > 0) {
-        capacity = ((double)now / full) * 100.0;
-    } else {
-        // Fallback to capacity file if energy files are not available.
-        snprintf(path, sizeof(path), "/sys/class/power_supply/%s/capacity", BATTERY_NAME);
-        capacity = (double)read_long(path);
-    }
-
-    snprintf(path, sizeof(path), "/sys/class/power_supply/%s/status", BATTERY_NAME);
-    FILE* f_status = fopen(path, "r");
-    char status[16] = "";
-    if (f_status) { fscanf(f_status, "%15s", status); fclose(f_status); }
+    long total = 0, available = 0;
+    char line[128];
     
-    char* s_text = (strcmp(status, "Charging")==0)?"CHR":(strcmp(status, "Discharging")==0)?"DIS":(strcmp(status, "Full")==0)?"FULL":"";
-    snprintf(out, size, "BAT: %.2f%% %s", capacity, s_text);
+    while (f && fgets(line, sizeof(line), f)) {
+        if (sscanf(line, "MemTotal: %ld", &total)) continue;
+        if (sscanf(line, "MemAvailable: %ld", &available)) break;
+    }
+    if (f) fclose(f);
+    
+    // Convert kB to MB
+    snprintf(out, size, "RAM: %ldMB", (total - available) / 1024);
 }
 
-// Gets the current date and time.
-static void get_datetime(char* out, size_t size) {
+// Reads battery status and capacity from sysfs.
+void get_battery_status(char* out, size_t size) {
+    char capacity[16], status[16], path[256];
+    
+    snprintf(path, sizeof(path), "%s/capacity", BATTERY_PATH);
+    if (!read_file(path, capacity, sizeof(capacity))) { 
+        snprintf(out, size, "PWR: AC"); 
+        return; 
+    }
+    
+    snprintf(path, sizeof(path), "%s/status", BATTERY_PATH);
+    read_file(path, status, sizeof(status));
+    
+    // Shorten status text
+    char* state_str = "FULL";
+    if (strcmp(status, "Charging") == 0) state_str = "CHR";
+    else if (strcmp(status, "Discharging") == 0) state_str = "DIS";
+    
+    snprintf(out, size, "BAT: %s%% %s", capacity, state_str);
+}
+
+// Gets current system time.
+void get_datetime(char* out, size_t size) {
     time_t t = time(NULL);
     strftime(out, size, "%Y-%m-%d %H:%M:%S", localtime(&t));
 }
 
+/* ================================================================== *
+ * MAIN LOOP                               *
+ * ================================================================== */
+
 int main() {
     char status_line[1024];
-    char modules[9][128];
-    unsigned int counter = 0;
+    // Module buffers: 0=WiFi, 1=Eth, 2=CPU, 3=GPU, 4=RAM, 5=Temp, 6=IO, 7=Disk, 8=Bat, 9=Time
+    char modules[10][64]; 
+    int counter = 0;
 
+    // Line buffering ensures output is sent immediately to the bar
     setvbuf(stdout, NULL, _IOLBF, 0);
 
     while (1) {
-        // Modules that update every second for real-time stats.
-        get_cpu(modules[2], sizeof(modules[2]));
-        get_gpu(modules[3], sizeof(modules[3]));
-        get_ram(modules[4], sizeof(modules[4]));
-        get_disk_write(modules[6], sizeof(modules[6]));
-        get_datetime(modules[8], sizeof(modules[8]));
+        // 1. Fast updates (Every cycle/1s)
+        get_cpu_usage(modules[2], sizeof(modules[2]));
+        get_gpu_usage(modules[3], sizeof(modules[3]));
+        get_ram_usage(modules[4], sizeof(modules[4]));
+        get_disk_io(modules[6], sizeof(modules[6]));
+        get_datetime(modules[9], sizeof(modules[9]));
 
-        // Modules that update every 5 seconds to save resources.
-        if (counter % 5 == 0) {
-            get_wifi(modules[0], sizeof(modules[0]));
-            get_temp(modules[1], sizeof(modules[1]));
-            get_battery(modules[7], sizeof(modules[7]));
-            get_disk(modules[5], sizeof(modules[5]));
+        // 2. Slow updates (Every N cycles/5s)
+        if (counter % SLOW_UPDATE_CYCLE == 0) {
+            get_network_status(modules[0], sizeof(modules[0]), WIFI_INTERFACE, 1); // WiFi
+            get_network_status(modules[1], sizeof(modules[1]), ETH_INTERFACE, 0);  // Ethernet
+            get_temperature(modules[5], sizeof(modules[5]));
+            get_disk_usage(modules[7], sizeof(modules[7]));
+            get_battery_status(modules[8], sizeof(modules[8]));
         }
 
-        snprintf(status_line, sizeof(status_line), "%s | %s | %s | %s | %s | %s | %s | %s | %s",
-                 modules[0], // WIFI
-                 modules[1], // TEMP
+        // 3. Construct the status bar string
+        snprintf(status_line, sizeof(status_line), 
+                 "%s | %s | %s | %s | %s | %s | %s | %s | %s | %s",
+                 modules[0], // Wifi
+                 modules[1], // Ethernet
+                 modules[5], // Temp
                  modules[2], // CPU
                  modules[3], // GPU
                  modules[4], // RAM
-                 modules[5], // DISK
+                 modules[7], // Disk
                  modules[6], // IO
-                 modules[7], // BAT
-                 modules[8]  // DATETIME
+                 modules[8], // Battery
+                 modules[9]  // Time
                  );
         
         puts(status_line);
         
         counter++;
-        sleep(1);
+        sleep(REFRESH_RATE_MS / 1000);
     }
     return 0;
 }

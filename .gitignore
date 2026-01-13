@@ -1,34 +1,27 @@
-# --- Executables ---
-cbar
-*.out
-*.exe
+# Prerequisites
+*.d
 
-# --- Object Files and Libraries ---
+# Compiled Object files
 *.o
 *.obj
-*.a
-*.so
-*.la
-*.lo
 
-# --- Build Directory ---
-build/
-bin/
-dist/
+# Executables
+cbar
+a.out
 
-# --- Editor Files ---
+# Editor temporary files and backups
+# Vim / Neovim
 *.swp
 *.swo
-.netrwhist
-undo/
-Session.vim
+tags
+compile_commands.json
 
 # Nano
 *.save
 
-# Micro
-*.save
+# Micro / Generic backups
+*~
+*.bak
 
-# --- OS Specific ---
+# System files
 .DS_Store
-Thumbs.db

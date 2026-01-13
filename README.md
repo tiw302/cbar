@@ -1,4 +1,3 @@
-
 ![Language](https://img.shields.io/badge/language-C-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![RAM](https://img.shields.io/badge/RAM-1.9MB-red)
@@ -14,10 +13,14 @@ no bullshit. just your system stats.
 ## Preview (⁠・⁠∀⁠・⁠)
 
 ![Alt text](images/bar.png)
+![Alt text](images/bar2.png)
 
+**preview:**
 
 ![Alt text](images/preview.png)
+![Alt text](images/preview.png)
 
+**use-ram:**
 
 ![Alt text](images/use-ram.png)
 
@@ -105,22 +108,10 @@ restart your wm: `$mod+Shift+r`
 
 ## output looks like
 ```
-WIFI: HomeNet (192.168.1.5) | TEMP: 45.0C | CPU: 12.34% | GPU: 15% | RAM: 1024 MB | DISK: 45% | IO: 2.3 KB/s | BAT: 85.23% CHR | 2026-01-10 20:45:00
+WIFI: HomeNet (192.168.1.5) | E: down | TEMP: 45.0C | CPU: 12.34% | GPU: 15% | RAM: 1024 MB | DISK: 45% | IO: 2.3 KB/s | BAT: 85.23% CHR | 2026-01-10 20:45:00
 ```
 
 clean. readable. gets the job done.
-
-## coming soon
-
-**cbar-color** - colored version for people who like pretty things
-
-- 🟢 green = good
-- 🟡 yellow = warning
-- 🔴 red = oh no
-
-memory usage: ~2.3mb (still way better than polybar's 50mb)
-
-eta: 2-3 days. ⭐ this repo for updates.
 
 ## why tho
 
