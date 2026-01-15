@@ -1,8 +1,9 @@
 /*
- * Cbar: A lightweight, dependency-free status bar for i3/sway.
+ * Cbar: Lightweight i3/sway status bar (JSON Protocol)
  * Written in pure C to minimize memory footprint (~1-2MB).
+ * Features: Instant start, CPU/GPU efficiency optimizations.
  *
- * Author: [Your Name/Handle]
+ * Author: [Your Name]
  * Repository: github.com/[your-username]/cbar
  */
 
@@ -16,29 +17,37 @@
 #include <ctype.h>
 #include <sys/statvfs.h>
 
-/* ================================================================== *
- * CONFIGURATION                               *
- * Customize these values to match your hardware and preferences.    *
- * ================================================================== */
+#include "config.h"
 
-// Network Interfaces (Run 'ip link' to find yours)
-#define WIFI_INTERFACE  "wlan0"
-#define ETH_INTERFACE   "eth0"
-
-// Battery Configuration
-#define BATTERY_PATH    "/sys/class/power_supply/BAT0"
-
-// System Paths (Usually don't need changing on standard Linux)
+// System Paths
 #define THERMAL_ZONE    "/sys/class/hwmon"
 #define GPU_INTEL_AMD   "/sys/class/drm/card0/device/gpu_busy_percent"
 
-// Update Intervals
-#define REFRESH_RATE_MS 1000  // Main loop delay (1 second)
-#define SLOW_UPDATE_CYCLE 5   // Update slow modules every 5 cycles (5 seconds)
-
 /* ================================================================== *
- * HELPER FUNCTIONS                            *
+ * HELPER FUNCTIONS                                                   *
  * ================================================================== */
+
+// Prints a single JSON block for i3bar protocol.
+// text: Content to display.
+// color: Color code from config.h.
+// is_last: Set to 1 if this is the last module in the array.
+void print_block(const char* text, const char* color, int is_last) {
+    printf("{\"full_text\":\"%s\"", text);
+    
+    // Apply color only if defined
+    if (color && strlen(color) > 0) {
+        printf(",\"color\":\"%s\"", color);
+    }
+    
+    // Enable automatic separator drawing by i3bar
+    printf(",\"separator\":true");
+    
+    printf("}");
+    
+    if (!is_last) {
+        printf(",");
+    }
+}
 
 // Reads the first line from a file. Returns 1 on success, 0 on failure.
 int read_file(const char* path, char* out, size_t size) {
@@ -72,10 +81,10 @@ void run_command(const char* cmd, char* out, size_t size) {
 }
 
 /* ================================================================== *
- * MODULES                                   *
+ * MODULES                                                            *
  * ================================================================== */
 
-// Calculates Root Partition (/) usage using syscalls (efficient).
+// Calculates Root Partition (/) usage.
 void get_disk_usage(char* out, size_t size) {
     struct statvfs buf;
     if (statvfs("/", &buf) == 0) {
@@ -122,7 +131,7 @@ void get_disk_io(char* out, size_t size) {
     prev_time = now;
 }
 
-// Gets GPU usage. Supports Intel/AMD (sysfs) and NVIDIA (nvidia-smi).
+// Gets GPU usage. Optimized to prefer sysfs over nvidia-smi.
 void get_gpu_usage(char* out, size_t size) {
     // 1. Try generic sysfs (Intel/AMD) - Extremely fast
     if (read_file(GPU_INTEL_AMD, out, size)) {
@@ -132,7 +141,7 @@ void get_gpu_usage(char* out, size_t size) {
         return;
     }
 
-    // 2. Fallback to nvidia-smi - Slower but necessary for NVIDIA
+    // 2. Fallback to nvidia-smi - Slower, should be called less frequently
     char util[16];
     run_command("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits", util, sizeof(util));
     if (strlen(util) > 0) {
@@ -269,51 +278,64 @@ void get_datetime(char* out, size_t size) {
 }
 
 /* ================================================================== *
- * MAIN LOOP                               *
+ * MAIN LOOP                                                          *
  * ================================================================== */
 
 int main() {
-    char status_line[1024];
-    // Module buffers: 0=WiFi, 1=Eth, 2=CPU, 3=GPU, 4=RAM, 5=Temp, 6=IO, 7=Disk, 8=Bat, 9=Time
     char modules[10][64]; 
     int counter = 0;
 
-    // Line buffering ensures output is sent immediately to the bar
+    // Initialize modules with placeholders to allow instant rendering
+    for(int i=0; i<10; i++) strcpy(modules[i], "...");
+
+    // Disable output buffering to ensure real-time updates
     setvbuf(stdout, NULL, _IOLBF, 0);
 
+    // 1. Initialize JSON Protocol Header (Version 1)
+    printf("{\"version\":1}\n");
+    printf("[\n");
+
+    // 2. Instant First Paint: Render placeholders immediately before calculation
+    printf("[");
+    print_block("Loading...", "#FFFFFF", 1); 
+    printf("],\n");
+
     while (1) {
-        // 1. Fast updates (Every cycle/1s)
+        // --- 1. Fast updates (CPU, RAM, Time, DiskIO) ---
+        // These read directly from /proc/sysfs and are very fast.
         get_cpu_usage(modules[2], sizeof(modules[2]));
-        get_gpu_usage(modules[3], sizeof(modules[3]));
         get_ram_usage(modules[4], sizeof(modules[4]));
         get_disk_io(modules[6], sizeof(modules[6]));
         get_datetime(modules[9], sizeof(modules[9]));
 
-        // 2. Slow updates (Every N cycles/5s)
+        // --- 2. Slow updates (GPU, Network, Temp, Disk, Bat) ---
+        // Executed every N cycles to reduce system load.
+        // GPU check is moved here because nvidia-smi can be slow.
         if (counter % SLOW_UPDATE_CYCLE == 0) {
-            get_network_status(modules[0], sizeof(modules[0]), WIFI_INTERFACE, 1); // WiFi
-            get_network_status(modules[1], sizeof(modules[1]), ETH_INTERFACE, 0);  // Ethernet
+            get_gpu_usage(modules[3], sizeof(modules[3])); 
+            get_network_status(modules[0], sizeof(modules[0]), WIFI_INTERFACE, 1);
+            get_network_status(modules[1], sizeof(modules[1]), ETH_INTERFACE, 0);
             get_temperature(modules[5], sizeof(modules[5]));
             get_disk_usage(modules[7], sizeof(modules[7]));
             get_battery_status(modules[8], sizeof(modules[8]));
         }
 
-        // 3. Construct the status bar string
-        snprintf(status_line, sizeof(status_line), 
-                 "%s | %s | %s | %s | %s | %s | %s | %s | %s | %s",
-                 modules[0], // Wifi
-                 modules[1], // Ethernet
-                 modules[5], // Temp
-                 modules[2], // CPU
-                 modules[3], // GPU
-                 modules[4], // RAM
-                 modules[7], // Disk
-                 modules[6], // IO
-                 modules[8], // Battery
-                 modules[9]  // Time
-                 );
+        // --- 3. Construct and Output JSON Array ---
+        printf("[");
         
-        puts(status_line);
+        // Output modules in desired order (Reorder calls to change bar layout)
+        print_block(modules[0], COLOR_WIFI, 0); // Wifi
+        print_block(modules[1], COLOR_ETH,  0); // Ethernet
+        print_block(modules[5], COLOR_TEMP, 0); // Temp
+        print_block(modules[2], COLOR_CPU,  0); // CPU
+        print_block(modules[3], COLOR_GPU,  0); // GPU (Updated every 5s)
+        print_block(modules[4], COLOR_RAM,  0); // RAM
+        print_block(modules[7], COLOR_DISK, 0); // Disk
+        print_block(modules[6], COLOR_IO,   0); // IO
+        print_block(modules[8], COLOR_BAT,  0); // Battery
+        print_block(modules[9], COLOR_TIME, 1); // Time (Last element: is_last=1)
+
+        printf("],\n"); // Close the array and newline
         
         counter++;
         sleep(REFRESH_RATE_MS / 1000);
