@@ -8,15 +8,15 @@
 #define BATTERY_PATH    "/sys/class/power_supply/BAT0"
 
 // --- Colors (Hex Code) ---
-#define COLOR_WIFI   "#adadad" // Green
-#define COLOR_ETH    "#adadad" // Blue
-#define COLOR_TEMP   "#d1d1d1" // Yellow
-#define COLOR_CPU    "#d1d1d1" // Red
-#define COLOR_GPU    "#d1d1d1" // Magenta
-#define COLOR_RAM    "#d1d1d1" // Cyan
-#define COLOR_DISK   "#d1d1d1" // Green
-#define COLOR_IO     "#d1d1d1" // Orange
-#define COLOR_BAT    "#ffffff" // Teal
+#define COLOR_WIFI   "#00FF00" // green
+#define COLOR_ETH    "#FF0000" // red
+#define COLOR_TEMP   "#ffffff" // white
+#define COLOR_CPU    "#ffffff" // white
+#define COLOR_GPU    "#ffffff" // white
+#define COLOR_RAM    "#ffffff" // white
+#define COLOR_DISK   "#ffffff" // white
+#define COLOR_IO     "#ffffff" // white
+#define COLOR_BAT    "#ffffff" // white
 #define COLOR_TIME   "#ffffff" // White
 
 // --- Settings ---
