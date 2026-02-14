@@ -1,40 +1,48 @@
-# cbar - System status monitor
+# ==============================================================================
+# cbar - Ultra-lightweight status bar for i3wm / Sway
+# ==============================================================================
 
 # --- Configuration ---
+CC      ?= gcc
+PREFIX  ?= /usr/local
+BINDIR   = $(PREFIX)/bin
 
-# Compiler settings
-CC ?= gcc
-CFLAGS += -std=c99 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L
+# --- Compiler Flags ---
+# -O2: Optimize for performance
+# -Wall -Wextra: Show all warnings
+CFLAGS  += -std=c99 -Wall -Wextra -O2 -D_POSIX_C_SOURCE=200809L
+LDFLAGS += 
 
-# Libraries
-LIBS =
-
-# Paths
-PREFIX ?= /usr/local
-BINDIR = $(PREFIX)/bin
-
-# Source file location (แก้ตรงนี้ให้ชี้ไปที่ src/)
-SRC = src/main.c
+# --- Files & Directories ---
+SRC_DIR  = src
+SRC      = $(SRC_DIR)/main.c
+OBJ      = $(SRC:.c=.o)
+TARGET   = cbar
 
 # --- Build Rules ---
+.PHONY: all clean install uninstall
 
-all: cbar
+all: $(TARGET)
 
-cbar: $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o cbar $(LIBS)
+%.o: %.c $(SRC_DIR)/config.h
+	@echo "  CC      $@"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(TARGET): $(OBJ)
+	@echo "  LINK    $@"
+	@$(CC) $(OBJ) $(LDFLAGS) -o $@
+	@echo "  STRIP   $@"
+	@strip $@
 
 # --- Installation ---
-
 install: all
-	@echo "Installing cbar..."
-	mkdir -p $(BINDIR)
-	cp -f cbar $(BINDIR)
-	chmod 755 $(BINDIR)/cbar
+	@echo "  INSTALL $(TARGET) -> $(DESTDIR)$(BINDIR)/$(TARGET)"
+	@install -D -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
 
 uninstall:
-	rm -f $(BINDIR)/cbar
+	@echo "  REMOVE  $(DESTDIR)$(BINDIR)/$(TARGET)"
+	@rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
 
 clean:
-	rm -f cbar
-
-.PHONY: all install uninstall clean
+	@echo "  CLEAN   build files"
+	@rm -f $(TARGET) $(OBJ)
