@@ -39,19 +39,75 @@ static inline void run_cmd(const char* cmd, char* out, size_t size) {
 
 void detect_hardware() {
     char path[256], test[16];
+    
+    // Detect battery
     snprintf(path, sizeof(path), "%s/capacity", BATTERY_PATH);
     has_battery = (access(path, R_OK) == 0);
+    
+    // Detect GPU
     has_gpu = (access(GPU_INTEL_AMD, R_OK) == 0);
     if (!has_gpu) {
         run_cmd("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null", test, sizeof(test));
         has_gpu = (strlen(test) > 0);
     }
-    snprintf(wifi_path, sizeof(wifi_path), "/sys/class/net/%s/operstate", WIFI_INTERFACE);
-    snprintf(eth_path, sizeof(eth_path), "/sys/class/net/%s/operstate", ETH_INTERFACE);
+    
+    // Auto-detect WiFi interface (wlan*, wlp*, wlo*)
+    const char* wifi_patterns[] = {WIFI_INTERFACE, "wlan0", "wlan1", "wlp*", "wlo*", NULL};
+    wifi_path[0] = '\0';
+    for (int i = 0; wifi_patterns[i]; i++) {
+        if (strchr(wifi_patterns[i], '*')) {
+            // Wildcard - check /sys/class/net/
+            DIR* dir = opendir("/sys/class/net");
+            if (dir) {
+                struct dirent* entry;
+                while ((entry = readdir(dir))) {
+                    if (strncmp(entry->d_name, "wl", 2) == 0) {
+                        snprintf(wifi_path, sizeof(wifi_path), "/sys/class/net/%s/operstate", entry->d_name);
+                        if (access(wifi_path, R_OK) == 0) { closedir(dir); goto wifi_found; }
+                    }
+                }
+                closedir(dir);
+            }
+        } else {
+            snprintf(wifi_path, sizeof(wifi_path), "/sys/class/net/%s/operstate", wifi_patterns[i]);
+            if (access(wifi_path, R_OK) == 0) goto wifi_found;
+        }
+    }
+    wifi_found:
+    
+    // Auto-detect Ethernet interface (eth*, enp*, eno*, ens*)
+    const char* eth_patterns[] = {ETH_INTERFACE, "eth0", "eth1", "enp*", "eno*", "ens*", NULL};
+    eth_path[0] = '\0';
+    for (int i = 0; eth_patterns[i]; i++) {
+        if (strchr(eth_patterns[i], '*')) {
+            DIR* dir = opendir("/sys/class/net");
+            if (dir) {
+                struct dirent* entry;
+                while ((entry = readdir(dir))) {
+                    if (strncmp(entry->d_name, "en", 2) == 0 || strncmp(entry->d_name, "eth", 3) == 0) {
+                        snprintf(eth_path, sizeof(eth_path), "/sys/class/net/%s/operstate", entry->d_name);
+                        if (access(eth_path, R_OK) == 0) { closedir(dir); goto eth_found; }
+                    }
+                }
+                closedir(dir);
+            }
+        } else {
+            snprintf(eth_path, sizeof(eth_path), "/sys/class/net/%s/operstate", eth_patterns[i]);
+            if (access(eth_path, R_OK) == 0) goto eth_found;
+        }
+    }
+    eth_found:;
 }
 
 void get_net(char* out, size_t size, char* color, const char* iface, int is_wifi, const char* path) {
     char state[16], ip[64] = "", cmd[128];
+    
+    if (!path || path[0] == '\0') {
+        snprintf(out, size, is_wifi ? "WIFI: N/A" : "E: N/A");
+        strcpy(color, COLOR_NET_DOWN);
+        return;
+    }
+    
     if (!read_file(path, state, sizeof(state)) || strcmp(state, "up") != 0) {
         snprintf(out, size, is_wifi ? "WIFI: down" : "E: down");
         strcpy(color, COLOR_NET_DOWN);
@@ -65,32 +121,60 @@ void get_net(char* out, size_t size, char* color, const char* iface, int is_wifi
         snprintf(cmd, sizeof(cmd), "iwgetid -r %s 2>/dev/null", iface);
         run_cmd(cmd, ssid, sizeof(ssid));
         snprintf(out, size, "WIFI: %s (%s)", strlen(ssid) ? ssid : "?", strlen(ip) ? ip : "No IP");
-    } else snprintf(out, size, "E: %s", strlen(ip) ? ip : "Up");
+    } else snprintf(out, size, "E: %s", strlen(ip) ? ip : "up");
 }
 
 void get_temp(char* out, size_t size) {
     DIR* dir = opendir(THERMAL_ZONE);
     if (!dir) { snprintf(out, size, "TEMP: N/A"); return; }
+    
     struct dirent* entry;
+    char path[256], name[32], temp_str[16];
+    int found = 0;
+    
     while ((entry = readdir(dir))) {
         if (strncmp(entry->d_name, "hwmon", 5) != 0) continue;
-        char path[256], name[32], temp_str[16];
         snprintf(path, sizeof(path), "%s/%s/name", THERMAL_ZONE, entry->d_name);
-        if (read_file(path, name, sizeof(name)) && (strstr(name, "core") || strstr(name, "k10") || strstr(name, "zen"))) {
-            snprintf(path, sizeof(path), "%s/%s/temp1_input", THERMAL_ZONE, entry->d_name);
-            if (read_file(path, temp_str, sizeof(temp_str))) {
-                int temp = atoi(temp_str) / 1000;
+        if (!read_file(path, name, sizeof(name))) continue;
+        
+        if (strstr(name, "coretemp") || strstr(name, "k10temp") || strstr(name, "zenpower") ||
+            strstr(name, "cpu_thermal") || strstr(name, "soc_thermal") || strstr(name, "x86_pkg_temp")) {
+            
+            for (int i = 1; i <= 5; i++) {
+                snprintf(path, sizeof(path), "%s/%s/temp%d_input", THERMAL_ZONE, entry->d_name, i);
+                if (read_file(path, temp_str, sizeof(temp_str))) {
+                    int temp = atoi(temp_str) / 1000;
+                    if (temp > 0 && temp < 150) {
+#if TEMP_FAHRENHEIT
+                        snprintf(out, size, "TEMP: %dF", (temp * 9 / 5) + 32);
+#else
+                        snprintf(out, size, "TEMP: %dC", temp);
+#endif
+                        found = 1;
+                        break;
+                    }
+                }
+            }
+            if (found) break;
+        }
+    }
+    closedir(dir);
+    
+    if (!found) {
+        if (read_file("/sys/class/thermal/thermal_zone0/temp", temp_str, sizeof(temp_str))) {
+            int temp = atoi(temp_str) / 1000;
+            if (temp > 0 && temp < 150) {
 #if TEMP_FAHRENHEIT
                 snprintf(out, size, "TEMP: %dF", (temp * 9 / 5) + 32);
 #else
                 snprintf(out, size, "TEMP: %dC", temp);
 #endif
-                closedir(dir); return;
+                return;
             }
         }
     }
-    closedir(dir);
-    snprintf(out, size, "TEMP: N/A");
+    
+    if (!found) snprintf(out, size, "TEMP: N/A");
 }
 
 void get_cpu(char* out, size_t size) {
