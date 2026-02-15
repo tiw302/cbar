@@ -46,15 +46,15 @@
 #define COLOR_NET_UP        "#00FF00"  // Green when connected
 #define COLOR_NET_DOWN      "#FF0000"  // Red when disconnected
 
-// Module colors (white theme)
-#define COLOR_TEMP          "#ffffff"
-#define COLOR_CPU           "#ffffff"
-#define COLOR_GPU           "#ffffff"
-#define COLOR_RAM           "#ffffff"
-#define COLOR_DISK          "#ffffff"
-#define COLOR_IO            "#ffffff"
-#define COLOR_BAT           "#ffffff"
-#define COLOR_TIME          "#ffffff"
+// Module colors
+#define COLOR_TEMP          "#FFFFFF" // White
+#define COLOR_CPU           "#FFFFFF" // White
+#define COLOR_GPU           "#FFFFFF" // White
+#define COLOR_RAM           "#FFFFFF" // White
+#define COLOR_DISK          "#FFFFFF" // White
+#define COLOR_IO            "#FFFFFF" // White
+#define COLOR_BAT           "#FFFFFF" // White
+#define COLOR_TIME          "#FFFFFF" // White
 
 /* ============================================================================
  * MODULE VISIBILITY
