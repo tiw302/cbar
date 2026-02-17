@@ -16,8 +16,8 @@ no bullshit. just your system stats. **now with auto-detection** because manuall
 **bar:**
 
 ![Status bar](images/Status_bar.png)
-![Status bar](images/Status_bar_2.png
-![Status bar](images/Status_bar_3.png
+![Status bar](images/Status_bar_2.png)
+![Status bar](images/Status_bar_3.png)
 
 **preview:**
 ![Full Setup](images/Preview.png)
