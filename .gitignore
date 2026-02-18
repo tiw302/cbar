@@ -1,27 +1,29 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
+# --- Compiled Object files ---
 *.o
 *.obj
 
-# Executables
+# --- Executables ---
 cbar
 a.out
+*.exe
 
-# Editor temporary files and backups
+# --- Editor / IDE temporary files ---
 # Vim / Neovim
 *.swp
 *.swo
-tags
-compile_commands.json
-
-# Nano
-*.save
-
-# Micro / Generic backups
 *~
+tags
+.netrwhist
+undo/
+
+# Nano / Micro / General backups
+*.save
 *.bak
 
-# System files
+# --- C/C++ Tooling ---
+compile_commands.json
+.cache/
+
+# --- OS Generated Files ---
 .DS_Store
+Thumbs.db

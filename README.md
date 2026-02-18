@@ -15,17 +15,17 @@ no bullshit. just your system stats. **now with auto-detection** because manuall
 
 **bar:**
 
-![Status bar](images/Status_bar.png)
-![Status bar](images/Status_bar_2.png
-![Status bar](images/Status_bar_3.png
+![Status bar](assets/Status_bar_1.png)
+![Status bar](assets/Status_bar_2.png)
+![Status bar](assets/Status_bar_3.png)
 
 **preview:**
-![Full Setup](images/Preview.png)
-![Full Setup](images/Preview_2.png)
+![Full Setup](assets/Preview_1.png)
+![Full Setup](assets/Preview_2.png)
 
 **use-ram:**
 
-![Use ram](images/Use-ram.png)
+![Use ram](assets/Use-ram.png)
 
 ## what it does
 
