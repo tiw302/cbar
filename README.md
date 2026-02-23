@@ -430,6 +430,6 @@ if you have issues:
 
 **status**: actively maintained (whenever i have free time)
 
-**last updated**: 2026-02-19
+**last updated**: 2026-02-23
 
 **stability**: it's c code reading from /proc. what could possibly go wrong?
