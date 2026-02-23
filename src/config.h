@@ -39,22 +39,22 @@
 #define UPDATE_TIME_SEC     1    // Date and time
 
 /* ============================================================================
- * COLORS (Hex codes: #RRGGBB)
+ * COLORS (Hex codes: #RRGGBB) - Grayscale/White Minimal Theme
  * ========================================================================= */
 
 // Network colors (dynamic based on connection status)
-#define COLOR_NET_UP        "#00FF00"  // Green when connected
-#define COLOR_NET_DOWN      "#FF0000"  // Red when disconnected
+#define COLOR_NET_UP        "#CCCCCC"  // Light gray when connected
+#define COLOR_NET_DOWN      "#666666"  // Dark gray when disconnected
 
-// Module colors
-#define COLOR_TEMP          "#FFFFFF" // White
-#define COLOR_CPU           "#FFFFFF" // White
-#define COLOR_GPU           "#FFFFFF" // White
-#define COLOR_RAM           "#FFFFFF" // White
-#define COLOR_DISK          "#FFFFFF" // White
-#define COLOR_IO            "#FFFFFF" // White
-#define COLOR_BAT           "#FFFFFF" // White
-#define COLOR_TIME          "#FFFFFF" // White
+// Module colors (white/gray theme)
+#define COLOR_TEMP          "#AAAAAA"  // Gray
+#define COLOR_CPU           "#FFFFFF"  // White
+#define COLOR_GPU           "#DDDDDD"  // Light gray
+#define COLOR_RAM           "#FFFFFF"  // White
+#define COLOR_DISK          "#BBBBBB"  // Gray
+#define COLOR_IO            "#999999"  // Dark gray
+#define COLOR_BAT           "#EEEEEE"  // Very light gray
+#define COLOR_TIME          "#FFFFFF"  // White
 
 /* ============================================================================
  * MODULE VISIBILITY
@@ -77,9 +77,9 @@
  * ========================================================================= */
 
 // Date/time format (see 'man strftime' for options)
-#define TIME_FORMAT         "%Y-%m-%d %H:%M:%S"
+#define TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 
 // Temperature unit (0 = Celsius, 1 = Fahrenheit)
-#define TEMP_FAHRENHEIT     0
+#define TEMP_FAHRENHEIT 0
 
 #endif

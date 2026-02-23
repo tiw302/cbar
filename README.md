@@ -407,21 +407,21 @@ shoutout to everyone who contributed:
 if this saved you from 50mb ram bloat:
 - ⭐ star the repo
 - tell your friends
-- contribute a pr
+- open a pr
 - use it and enjoy your extra ram
 
 if you have issues:
-- read troubleshooting section first
+- read the troubleshooting section first
 - check existing issues
 - provide full error messages when reporting
 
 **not accepting:**
-- "can you add [feature]" without pr
+- "can you add [feature]" without a pr
 - "why isn't there a gui config"
 - "this doesn't work" without any details
 
-**do accept:**
-- bug reports with error messages
+**welcomed:**
+- bug reports with logs/error messages
 - prs that fix stuff
 - hardware compatibility reports
 - cool screenshots of your setup
@@ -430,6 +430,6 @@ if you have issues:
 
 **status**: actively maintained (whenever i have free time)
 
-**last updated**: 2026-02-14
+**last updated**: 2026-02-19
 
 **stability**: it's c code reading from /proc. what could possibly go wrong?
